@@ -356,6 +356,7 @@ int ts3plugin_onTextMessageEvent(uint64 serverConnectionHandlerID, anyID targetM
             "Available commands:\n"
             "!list or !help - Display this help message\n"
             "!song - Current song name\n"
+            "!kick - Kick bot"
             "!00 - 00 Club Hits Station\n"
             "!breaks - Breaks Station\n"
             "!slap_house - Slap House Station\n"
@@ -390,18 +391,35 @@ int ts3plugin_onTextMessageEvent(uint64 serverConnectionHandlerID, anyID targetM
             "!disco - Disco House station", 
             fromID, NULL);
     } else if (strcmp(message, "!song") == 0) {
+        char message[256];
         printf("Get current song request, getting...");
         char *song_name = GetSongName(connection);
         if (song_name) {
             printf("Currently playing: %s\n", song_name);
-            char message[256];
             snprintf(message, sizeof(message), "[b]Currently playing:[/b] [i]%s[/i]", song_name);
-            ts3Functions.requestSendPrivateTextMsg(serverConnectionHandlerID, message, fromID, NULL);
-            free(song_name);
-        } else {
-            printf("Failed to retrieve song name\n");
-            ts3Functions.requestSendPrivateTextMsg(serverConnectionHandlerID, "Sorry, got unexcepted error while getting current song :c", fromID, NULL);
         }
+
+        char *station = GetStationName(connection);
+        if(station) {
+            printf("Station: %s\n", station);
+            size_t len = strlen(message);
+            snprintf(message + len, sizeof(message) - len, " [b]at:[/b] [i]%s[/i]", station);
+        }
+
+        if(!song_name && !station) {
+            ts3Functions.requestSendPrivateTextMsg(serverConnectionHandlerID, "Sorry, got unexcepted error while getting current song :c", fromID, NULL);
+
+        } else {
+            ts3Functions.requestSendPrivateTextMsg(serverConnectionHandlerID, message, fromID, NULL);
+        }
+        free(song_name);
+        free(station);
+    } else if(strcmp(message, "!kick") == 0) {
+            printf("Moving to default channel (ID: %d)...\n", DEFAULT_CHANNEL_ID);
+            if (ts3Functions.requestClientMove(serverConnectionHandlerID, myClientID, DEFAULT_CHANNEL_ID, "", "") != ERROR_ok) {
+                ts3Functions.logMessage("Failed to move to default channel", LogLevel_ERROR, "Plugin", serverConnectionHandlerID);
+            }
+            printf("Created move request!\n");
     } else if (strcmp(message, "!00") == 0) {
         ts3Functions.requestSendPrivateTextMsg(serverConnectionHandlerID, "Tuning into 00s Club Hits station!", fromID, NULL);
         change_station(connection, ClubHits);

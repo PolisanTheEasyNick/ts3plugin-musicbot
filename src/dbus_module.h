@@ -219,3 +219,87 @@ char *GetSongName(DBusConnection *connection) {
         return NULL;
     }
 }
+
+char *GetStationName(DBusConnection *connection) {
+        DBusMessage *message = NULL, *reply = NULL;
+    DBusError error;
+    dbus_error_init(&error);
+
+    message = dbus_message_new_method_call(
+        "org.mpris.MediaPlayer2.vlc",  // VLC Bus Name
+        "/org/mpris/MediaPlayer2",     // VLC Object Path
+        "org.freedesktop.DBus.Properties", // Interface
+        "Get"                          // Method
+        );
+    if (!message) {
+        fprintf(stderr, "Failed to create DBus message\n");
+        return NULL;
+    }
+
+    const char *interface_name = "org.mpris.MediaPlayer2.Player";
+    const char *property_name = "Metadata";
+    dbus_message_append_args(
+        message,
+        DBUS_TYPE_STRING, &interface_name,
+        DBUS_TYPE_STRING, &property_name,
+        DBUS_TYPE_INVALID
+        );
+
+    reply = dbus_connection_send_with_reply_and_block(connection, message, -1, &error);
+    dbus_message_unref(message);
+    if (dbus_error_is_set(&error)) {
+        fprintf(stderr, "DBus Error: %s\n", error.message);
+        dbus_error_free(&error);
+        return NULL;
+    }
+
+    DBusMessageIter args;
+    char *station_name = NULL;
+
+    if (dbus_message_iter_init(reply, &args) &&
+        dbus_message_iter_get_arg_type(&args) == DBUS_TYPE_VARIANT) {
+        DBusMessageIter variant_iter, dict_iter, entry_iter;
+        dbus_message_iter_recurse(&args, &variant_iter);
+        if (dbus_message_iter_get_arg_type(&variant_iter) == DBUS_TYPE_ARRAY) {
+            dbus_message_iter_recurse(&variant_iter, &dict_iter);
+
+            while (dbus_message_iter_get_arg_type(&dict_iter) == DBUS_TYPE_DICT_ENTRY) {
+                dbus_message_iter_recurse(&dict_iter, &entry_iter);
+
+                if (dbus_message_iter_get_arg_type(&entry_iter) == DBUS_TYPE_STRING) {
+                    const char *key;
+                    dbus_message_iter_get_basic(&entry_iter, &key);
+
+                    dbus_message_iter_next(&entry_iter);
+                    if (strcmp(key, "xesam:genre") == 0) {
+                        if (dbus_message_iter_get_arg_type(&entry_iter) == DBUS_TYPE_VARIANT) {
+                            DBusMessageIter value_iter;
+                            dbus_message_iter_recurse(&entry_iter, &value_iter);
+
+                            if (dbus_message_iter_get_arg_type(&value_iter) == DBUS_TYPE_ARRAY) {
+                                DBusMessageIter genre_iter;
+                                dbus_message_iter_recurse(&value_iter, &genre_iter);
+
+                                if (dbus_message_iter_get_arg_type(&genre_iter) == DBUS_TYPE_STRING) {
+                                    dbus_message_iter_get_basic(&genre_iter, &station_name);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                dbus_message_iter_next(&dict_iter);
+            }
+        }
+    }
+
+
+    dbus_message_unref(reply);
+
+    if (station_name) {
+        return strdup(station_name);
+    } else {
+        fprintf(stderr, "Failed to retrieve station\n");
+        return NULL;
+    }
+}
