@@ -25,6 +25,8 @@
 ///// MY SECTION //////////
 #include "dbus_module.h"
 #define DEFAULT_CHANNEL_ID 12304
+#define AFK_CHANNEL_ID 11071
+#define INN_CHANNEL_ID 1
 uint64_t currentChannelID = 0;
 anyID myClientID;
 uint64_t currentConnHandlerID = 0;
@@ -281,8 +283,8 @@ void ts3plugin_onClientMoveEvent(uint64 serverConnectionHandlerID, anyID clientI
         
         ts3Functions.freeMemory(clientsInChannel); 
         printf("Client count in current channel: %ld\n", clientCount);
-        if (clientCount == 1 && currentChannelID != DEFAULT_CHANNEL_ID) {  
-            printf("I'm alone in the channel. Moving to default channel (ID: %d)...\n", DEFAULT_CHANNEL_ID);
+        if ((clientCount == 1 && currentChannelID != DEFAULT_CHANNEL_ID) || currentChannelID == AFK_CHANNEL_ID || currentChannelID == INN_CHANNEL_ID) {  
+            printf("I'm alone in the channel (or moved to afk....). Moving to default channel (ID: %d)...\n", DEFAULT_CHANNEL_ID);
             if (ts3Functions.requestClientMove(serverConnectionHandlerID, myClientID, DEFAULT_CHANNEL_ID, "", "") != ERROR_ok) {
                 ts3Functions.logMessage("Failed to move to default channel", LogLevel_ERROR, "Plugin", serverConnectionHandlerID);
             }
@@ -297,6 +299,16 @@ void ts3plugin_onClientMoveMovedEvent(uint64 serverConnectionHandlerID, anyID cl
     if(clientID == myClientID) {
         printf("Hey! I'm moved!\n");
         currentChannelID = newChannelID;
+        if (currentChannelID == AFK_CHANNEL_ID || currentChannelID == INN_CHANNEL_ID) {  
+            printf("I'm alone in the channel (or moved to afk....). Moving to default channel (ID: %d)...\n", DEFAULT_CHANNEL_ID);
+            if (ts3Functions.requestClientMove(serverConnectionHandlerID, myClientID, DEFAULT_CHANNEL_ID, "", "") != ERROR_ok) {
+                ts3Functions.logMessage("Failed to move to default channel", LogLevel_ERROR, "Plugin", serverConnectionHandlerID);
+            }
+            printf("Created move request!\n");
+            return;
+        } else {
+            printf("Not alone or already in default, no need to move.\n");
+        }
         int error;
         printf("Setting old channel codec to voice..\n");
         if (oldChannelID != 0) {
@@ -342,7 +354,24 @@ int ts3plugin_onTextMessageEvent(uint64 serverConnectionHandlerID, anyID targetM
         return 1;
     }
 
-    if (currentChannelID != senderChannelID) {
+    if(strcmp(message, "!join") == 0) {
+        if(currentChannelID == DEFAULT_CHANNEL_ID) {
+            printf("Join command detected from cid: %d!\n", fromID);
+            uint64 channelID;
+            if(ts3Functions.getChannelOfClient(serverConnectionHandlerID, fromID, &channelID) == ERROR_ok) {
+                printf("Requested to move bot to channel %lu\n", channelID);
+                if (ts3Functions.requestClientMove(serverConnectionHandlerID, myClientID, channelID, "", "") != ERROR_ok) {
+                    ts3Functions.logMessage("Failed to move to client channel", LogLevel_ERROR, "Plugin", serverConnectionHandlerID);
+                }
+            }
+            return 0;
+        } else {
+            ts3Functions.requestSendPrivateTextMsg(serverConnectionHandlerID, "Sorry, I can join user's channel only when I am in default (MUSIC) channel", fromID, NULL);
+            return 0;
+        }
+    } 
+
+    if ((strcmp(message, "!list") != 0 && strcmp(message, "!help") != 0) && currentChannelID != senderChannelID) {
         char sorryMessage[256];
         snprintf(sorryMessage, sizeof(sorryMessage), 
                  "Sorry %s, I can only respond to clients in the same room.", fromName);
@@ -356,7 +385,8 @@ int ts3plugin_onTextMessageEvent(uint64 serverConnectionHandlerID, anyID targetM
             "Available commands:\n"
             "!list or !help - Display this help message\n"
             "!song - Current song name\n"
-            "!kick - Kick bot"
+            "!join - Make MUSICBOT join your channel\n"
+            "!kick - Kick bot\n"
             "!00 - 00 Club Hits Station\n"
             "!breaks - Breaks Station\n"
             "!slap_house - Slap House Station\n"
@@ -408,18 +438,18 @@ int ts3plugin_onTextMessageEvent(uint64 serverConnectionHandlerID, anyID targetM
 
         if(!song_name && !station) {
             ts3Functions.requestSendPrivateTextMsg(serverConnectionHandlerID, "Sorry, got unexcepted error while getting current song :c", fromID, NULL);
-
+    
         } else {
             ts3Functions.requestSendPrivateTextMsg(serverConnectionHandlerID, message, fromID, NULL);
         }
         free(song_name);
         free(station);
     } else if(strcmp(message, "!kick") == 0) {
-            printf("Moving to default channel (ID: %d)...\n", DEFAULT_CHANNEL_ID);
-            if (ts3Functions.requestClientMove(serverConnectionHandlerID, myClientID, DEFAULT_CHANNEL_ID, "", "") != ERROR_ok) {
-                ts3Functions.logMessage("Failed to move to default channel", LogLevel_ERROR, "Plugin", serverConnectionHandlerID);
-            }
-            printf("Created move request!\n");
+        printf("Moving to default channel (ID: %d)...\n", DEFAULT_CHANNEL_ID);
+        if (ts3Functions.requestClientMove(serverConnectionHandlerID, myClientID, DEFAULT_CHANNEL_ID, "", "") != ERROR_ok) {
+            ts3Functions.logMessage("Failed to move to default channel", LogLevel_ERROR, "Plugin", serverConnectionHandlerID);
+        }
+        printf("Created move request!\n");
     } else if (strcmp(message, "!00") == 0) {
         ts3Functions.requestSendPrivateTextMsg(serverConnectionHandlerID, "Tuning into 00s Club Hits station!", fromID, NULL);
         change_station(connection, ClubHits);
